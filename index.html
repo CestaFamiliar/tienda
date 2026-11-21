@@ -149,6 +149,19 @@
             padding: 16px;
         }
 
+        .admin-cat-group {
+            margin-bottom: 18px;
+        }
+
+        .admin-cat-header {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: var(--blue-primary);
+            padding: 8px 12px;
+            margin-top: 8px;
+            border-radius: 12px;
+        }
+
         .delivery-notice {
             padding: 12px 16px;
             margin-bottom: 14px;
@@ -1700,15 +1713,30 @@
         }
     }
 
-    async function moverProducto(idx, delta) {
+    async function moverProductoEnCategoria(idx, delta) {
         const prods = getTienda().productos || [];
-        const nuevoIdx = idx + delta;
-        if (nuevoIdx < 0 || nuevoIdx >= prods.length) return;
+        const actual = prods[idx];
+        if (!actual) return;
+
+        const indicesMismaCat = [];
+        prods.forEach((p, i) => {
+            if ((p.cat || "General") === (actual.cat || "General")) {
+                indicesMismaCat.push(i);
+            }
+        });
+
+        const posEnCat = indicesMismaCat.indexOf(idx);
+        const nuevaPosEnCat = posEnCat + delta;
+        if (posEnCat < 0 || nuevaPosEnCat < 0 || nuevaPosEnCat >= indicesMismaCat.length) return;
+
+        const targetIdx = indicesMismaCat[nuevaPosEnCat];
         const temp = prods[idx];
-        prods[idx] = prods[nuevoIdx];
-        prods[nuevoIdx] = temp;
-        if (editandoProductoIdx === idx) editandoProductoIdx = nuevoIdx;
-        else if (editandoProductoIdx === nuevoIdx) editandoProductoIdx = idx;
+        prods[idx] = prods[targetIdx];
+        prods[targetIdx] = temp;
+
+        if (editandoProductoIdx === idx) editandoProductoIdx = targetIdx;
+        else if (editandoProductoIdx === targetIdx) editandoProductoIdx = idx;
+
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
             renderizarListasAdmin();
         }
@@ -1720,6 +1748,48 @@
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
             renderizarListasAdmin();
         }
+    }
+
+    function renderizarFilaProductoAdmin(p, i, cats, esPrimeroEnCat, esUltimoEnCat) {
+        if (editandoProductoIdx === i) {
+            const opcionesCat = cats.length > 0
+                ? cats.map(c => `<option value="${c.replace(/"/g, "&quot;")}" ${c === p.cat ? 'selected' : ''}>${c}</option>`).join("")
+                : `<option value="${(p.cat || '').replace(/"/g, "&quot;")}">${p.cat || 'General'}</option>`;
+            return `
+                <div class="neu-inset edit-box">
+                    <div class="form-group"><input type="text" id="edit-prod-nombre" value="${(p.nombre || '').replace(/"/g, "&quot;")}" placeholder="Nombre del producto *"></div>
+                    <div class="form-group"><input type="text" id="edit-prod-desc" value="${(p.desc || '').replace(/"/g, "&quot;")}" placeholder="Descripción corta"></div>
+                    <div class="grid-2 form-group">
+                        <input type="number" id="edit-prod-precio" step="0.5" value="${p.precio_usd}" placeholder="Precio USD *">
+                        <select id="edit-prod-cat">${opcionesCat}</select>
+                    </div>
+                    <div class="form-group">
+                        <label>Disponibilidad en tienda</label>
+                        <select id="edit-prod-agotado">
+                            <option value="disponible" ${!p.agotado ? 'selected' : ''}>✅ Disponible</option>
+                            <option value="agotado" ${p.agotado ? 'selected' : ''}>🚫 Agotado</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Cambiar foto (opcional)</label><input type="file" id="edit-prod-foto" accept="image/*" onchange="procesarImagen(this, 'editProducto')"></div>
+                    <div class="order-actions">
+                        <button class="btn-blue" onclick="guardarEditarProducto(${i})">💾 Guardar Cambios</button>
+                        <button class="btn-neu" onclick="cancelarEditarProducto()">Cancelar</button>
+                    </div>
+                </div>
+            `;
+        }
+        const etiquetaAgotado = p.agotado ? ` <span style="color:#dc2626; font-weight:800; font-size:0.78rem;">(AGOTADO)</span>` : "";
+        return `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--shadow-dark);">
+                <span><strong>${p.nombre}</strong> - $${p.precio_usd.toFixed(2)} (${p.cat})${etiquetaAgotado}</span>
+                <div class="order-actions">
+                    <button class="btn-neu btn-order" onclick="iniciarEditarProducto(${i})">✏️</button>
+                    <button class="btn-neu btn-order" onclick="moverProductoEnCategoria(${i}, -1)" ${esPrimeroEnCat ? 'disabled' : ''}>↑</button>
+                    <button class="btn-neu btn-order" onclick="moverProductoEnCategoria(${i}, 1)" ${esUltimoEnCat ? 'disabled' : ''}>↓</button>
+                    <button class="btn-danger" onclick="eliminarProducto(${i})">🗑️</button>
+                </div>
+            </div>
+        `;
     }
 
     function renderizarListasAdmin() {
@@ -1773,47 +1843,51 @@
         }
 
         const prods = t.productos || [];
-        document.getElementById("lista-productos-admin").innerHTML = prods.map((p, i) => {
-            if (editandoProductoIdx === i) {
-                const opcionesCat = cats.length > 0
-                    ? cats.map(c => `<option value="${c.replace(/"/g, "&quot;")}" ${c === p.cat ? 'selected' : ''}>${c}</option>`).join("")
-                    : `<option value="${(p.cat || '').replace(/"/g, "&quot;")}">${p.cat || 'General'}</option>`;
-                return `
-                    <div class="neu-inset edit-box">
-                        <div class="form-group"><input type="text" id="edit-prod-nombre" value="${(p.nombre || '').replace(/"/g, "&quot;")}" placeholder="Nombre del producto *"></div>
-                        <div class="form-group"><input type="text" id="edit-prod-desc" value="${(p.desc || '').replace(/"/g, "&quot;")}" placeholder="Descripción corta"></div>
-                        <div class="grid-2 form-group">
-                            <input type="number" id="edit-prod-precio" step="0.5" value="${p.precio_usd}" placeholder="Precio USD *">
-                            <select id="edit-prod-cat">${opcionesCat}</select>
-                        </div>
-                        <div class="form-group">
-                            <label>Disponibilidad en tienda</label>
-                            <select id="edit-prod-agotado">
-                                <option value="disponible" ${!p.agotado ? 'selected' : ''}>✅ Disponible</option>
-                                <option value="agotado" ${p.agotado ? 'selected' : ''}>🚫 Agotado</option>
-                            </select>
-                        </div>
-                        <div class="form-group"><label>Cambiar foto (opcional)</label><input type="file" id="edit-prod-foto" accept="image/*" onchange="procesarImagen(this, 'editProducto')"></div>
-                        <div class="order-actions">
-                            <button class="btn-blue" onclick="guardarEditarProducto(${i})">💾 Guardar Cambios</button>
-                            <button class="btn-neu" onclick="cancelarEditarProducto()">Cancelar</button>
-                        </div>
-                    </div>
-                `;
-            }
-            const etiquetaAgotado = p.agotado ? ` <span style="color:#dc2626; font-weight:800; font-size:0.78rem;">(AGOTADO)</span>` : "";
-            return `
-                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--shadow-dark);">
-                    <span><strong>${p.nombre}</strong> - $${p.precio_usd.toFixed(2)} (${p.cat})${etiquetaAgotado}</span>
-                    <div class="order-actions">
-                        <button class="btn-neu btn-order" onclick="iniciarEditarProducto(${i})">✏️</button>
-                        <button class="btn-neu btn-order" onclick="moverProducto(${i}, -1)" ${i === 0 ? 'disabled' : ''}>↑</button>
-                        <button class="btn-neu btn-order" onclick="moverProducto(${i}, 1)" ${i === prods.length - 1 ? 'disabled' : ''}>↓</button>
-                        <button class="btn-danger" onclick="eliminarProducto(${i})">🗑️</button>
-                    </div>
+        const listaProdsEl = document.getElementById("lista-productos-admin");
+        if (prods.length === 0) {
+            listaProdsEl.innerHTML = `<p style="color:var(--text-muted); font-size:0.88rem;">Aún no hay productos publicados.</p>`;
+            return;
+        }
+
+        const categoriasOrdenadas = obtenerListaCategorias(t);
+        const gruposHtml = [];
+
+        categoriasOrdenadas.forEach(cat => {
+            const indices = [];
+            prods.forEach((p, idx) => {
+                if (p.cat === cat) indices.push(idx);
+            });
+            if (indices.length === 0) return;
+
+            const filas = indices.map((idx, pos) =>
+                renderizarFilaProductoAdmin(prods[idx], idx, cats, pos === 0, pos === indices.length - 1)
+            ).join("");
+
+            gruposHtml.push(`
+                <div class="admin-cat-group">
+                    <div class="neu-inset admin-cat-header">📂 ${cat} (${indices.length})</div>
+                    ${filas}
                 </div>
-            `;
-        }).join("");
+            `);
+        });
+
+        const indicesSinCat = [];
+        prods.forEach((p, idx) => {
+            if (!p.cat || !categoriasOrdenadas.includes(p.cat)) indicesSinCat.push(idx);
+        });
+        if (indicesSinCat.length > 0) {
+            const filasSinCat = indicesSinCat.map((idx, pos) =>
+                renderizarFilaProductoAdmin(prods[idx], idx, cats, pos === 0, pos === indicesSinCat.length - 1)
+            ).join("");
+            gruposHtml.push(`
+                <div class="admin-cat-group">
+                    <div class="neu-inset admin-cat-header">📂 General (${indicesSinCat.length})</div>
+                    ${filasSinCat}
+                </div>
+            `);
+        }
+
+        listaProdsEl.innerHTML = gruposHtml.join("");
     }
 
     function solicitarEliminacionTienda() {
