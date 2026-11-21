@@ -107,9 +107,22 @@
         }
 
         .btn-cta-top {
-            padding: 10px 18px;
-            font-size: 0.88rem;
-            border-radius: 14px;
+            flex: 1;
+            height: 44px;
+            padding: 0 18px;
+            font-size: 0.92rem;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        #select-moneda {
+            height: 44px;
+            padding: 0 14px;
+            width: auto;
+            min-width: 110px;
         }
 
         .btn-danger {
@@ -168,12 +181,11 @@
         .pill-open { background: rgba(16, 185, 129, 0.15); color: #059669; font-weight: 800; font-size: 0.7rem; padding: 4px 10px; border-radius: 99px; }
         .pill-closed { background: rgba(239, 68, 68, 0.15); color: #dc2626; font-weight: 800; font-size: 0.7rem; padding: 4px 10px; border-radius: 99px; }
 
-        /* Barra superior con CTA y selector de moneda */
+        /* Barra superior con CTA alargado y selector de moneda */
         .search-bar-grid {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            flex-wrap: wrap;
             gap: 12px;
             margin-bottom: 18px;
         }
@@ -508,10 +520,10 @@
             </div>
         </div>
 
-        <!-- Botón CTA al lado del selector de moneda, justo encima del Banner -->
+        <!-- Botón CTA largo hasta llegar al selector de moneda, justo encima del Banner -->
         <div class="search-bar-grid" id="search-grid">
             <button type="button" class="btn-blue btn-cta-top" onclick="irAProductos()">🛒 Compra en línea</button>
-            <select id="select-moneda" onchange="cambiarMoneda()" style="width: auto; min-width: 110px;"></select>
+            <select id="select-moneda" onchange="cambiarMoneda()"></select>
         </div>
 
         <!-- Vista de Checkout (Oculta por defecto) -->
@@ -582,7 +594,7 @@
                 </div>
             </div>
 
-            <!-- Pestañas (Categorías + Reseñas) -->
+            <!-- Pestañas (Reseñas de primera + Categorías) -->
             <div class="tabs-container" id="tabs-categorias"></div>
 
             <!-- Contenedor de Categorías y Productos -->
@@ -992,8 +1004,12 @@
             categoriaActiva = categorias[0];
         }
 
-        // Pestañas (Categorías + Reseñas)
+        // Pestañas (Reseñas de primera + Categorías)
         const tabsDiv = document.getElementById("tabs-categorias");
+        const resenaLabel = `⭐ Reseñas (${(tienda.resenas || []).length})`;
+        const resenaActiveClass = viendoResenas ? "active" : "";
+        const resenaBtnHtml = `<button class="tab-btn ${resenaActiveClass}" onclick="abrirSeccionResenas()">${resenaLabel}</button>`;
+
         const catBtnsHtml = categorias.map(cat => {
             const activeClass = (!viendoResenas && categoriaActiva === cat) ? "active" : "";
             const safeCatAttr = cat.replace(/"/g, "&quot;");
@@ -1001,9 +1017,7 @@
             return `<button class="tab-btn ${activeClass}" data-cat="${safeCatAttr}" onclick="irACategoria('${safeCatJs}')">${cat}</button>`;
         }).join("");
 
-        const resenaLabel = `⭐ Reseñas (${(tienda.resenas || []).length})`;
-        const resenaActiveClass = viendoResenas ? "active" : "";
-        tabsDiv.innerHTML = `${catBtnsHtml}<button class="tab-btn ${resenaActiveClass}" onclick="abrirSeccionResenas()">${resenaLabel}</button>`;
+        tabsDiv.innerHTML = `${resenaBtnHtml}${catBtnsHtml}`;
 
         if (viendoResenas) {
             document.getElementById("grid-productos").classList.add("hidden");
