@@ -897,8 +897,8 @@
 
 <script>
     // --- CONEXIÓN A SUPABASE (TABLA: tiendas | COLUMNAS: id, datos) ---
-    const SUPABASE_URL = "https://mcmubdkrqqemqkmzweic.supabase.co";
-    const SUPABASE_KEY = "sb_publishable_y83UzvSPmyFkLxzq8BTAiQ_oYf1CV0l";
+    const SUPABASE_URL = "https://jpziuvvzseblargtrmng.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_cHwYxtVLYvhk89c1RtlBkQ_njknrHM-";
     const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     let db = {};
@@ -912,6 +912,7 @@
     let editandoProductoIdx = null;
     let editandoMunicipioNombre = null;
     let visitasPendientesGuardar = false;
+    let guardandoEnNube = false;
 
     function mostrarNotificacion(texto) {
         const toast = document.getElementById("toast");
@@ -941,15 +942,24 @@
 
     async function guardarTiendaEnSupabase(key) {
         if (!key || !db[key]) return false;
-        const { error } = await sb
-            .from("tiendas")
-            .upsert({ id: key, datos: db[key] }, { onConflict: "id" });
-        if (error) {
-            console.error("Error guardando en Supabase:", error);
-            mostrarNotificacion("❌ Error guardando en la nube: " + error.message);
+        if (guardandoEnNube) {
+            mostrarNotificacion("⏳ Ya se está guardando en la nube...");
             return false;
         }
-        return true;
+        guardandoEnNube = true;
+        try {
+            const { error } = await sb
+                .from("tiendas")
+                .upsert({ id: key, datos: db[key] }, { onConflict: "id" });
+            if (error) {
+                console.error("Error guardando en Supabase:", error);
+                mostrarNotificacion("❌ Error guardando en la nube: " + error.message);
+                return false;
+            }
+            return true;
+        } finally {
+            guardandoEnNube = false;
+        }
     }
 
     async function eliminarTiendaDeSupabase(key) {
@@ -1098,7 +1108,6 @@
         const nombreTienda = cfg.nombre || "Tienda Online";
         document.getElementById("footer-copy").innerHTML = `© ${anioActual} ${nombreTienda}. Todos los derechos reservados. &nbsp;|&nbsp; Envío de alimentos y productos básicos para los tuyos: recibes el pedido y luego pagas.`;
 
-        // Selector de Monedas
         const selMon = document.getElementById("select-moneda");
         const activas = Object.keys(cfg.monedas || {}).filter(m => cfg.monedas[m].activa);
         if (activas.length > 0) {
@@ -1115,7 +1124,6 @@
             categoriaActiva = categorias[0];
         }
 
-        // Pestañas (Reseñas de primera + Categorías)
         const tabsDiv = document.getElementById("tabs-categorias");
         const resenaLabel = `⭐ Reseñas (${(tienda.resenas || []).length})`;
         const resenaActiveClass = viendoResenas ? "active" : "";
@@ -1130,7 +1138,6 @@
 
         tabsDiv.innerHTML = `${resenaBtnHtml}${catBtnsHtml}`;
 
-        // Mantener siempre visibles tanto los productos como la sección de reseñas
         document.getElementById("grid-productos").classList.remove("hidden");
         document.getElementById("seccion-resenas").classList.remove("hidden");
         renderizarProductos();
@@ -1232,7 +1239,6 @@
         if (!tienda) return;
         const grid = document.getElementById("grid-productos");
 
-        // Mantener siempre visible la imagen y descripción de la tienda
         const heroBanner = document.getElementById("hero-banner");
         if (heroBanner) heroBanner.style.display = "block";
 
@@ -1257,7 +1263,6 @@
             `;
         }).filter(Boolean);
 
-        // Productos sin categoría asignada o con categoría eliminada
         const sinCat = productos.filter(p => !p.cat || !categorias.includes(p.cat));
         if (sinCat.length > 0) {
             bloques.push(`
@@ -1628,10 +1633,37 @@
         renderizarPanelVisitas();
     }
 
+    // --- COMPRESIÓN AUTOMÁTICA DE IMÁGENES PARA EVITAR STATEMENT TIMEOUT ---
+    function comprimirDataUrl(dataUrl, maxAncho, calidad) {
+        return new Promise(resolve => {
+            const img = new Image();
+            img.onload = () => {
+                let ancho = img.width;
+                let alto = img.height;
+                if (ancho > maxAncho) {
+                    alto = Math.round((alto * maxAncho) / ancho);
+                    ancho = maxAncho;
+                }
+                const canvas = document.createElement("canvas");
+                canvas.width = ancho;
+                canvas.height = alto;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(img, 0, 0, ancho, alto);
+                resolve(canvas.toDataURL("image/jpeg", calidad));
+            };
+            img.onerror = () => resolve(dataUrl);
+            img.src = dataUrl;
+        });
+    }
+
     function procesarImagen(input, tipo) {
         if (input.files && input.files[0]) {
             const reader = new FileReader();
-            reader.onload = e => { tempImages[tipo] = e.target.result; };
+            reader.onload = async e => {
+                const maxAncho = tipo === "banner" ? 900 : tipo === "logo" ? 300 : 600;
+                const calidad = tipo === "logo" ? 0.8 : 0.72;
+                tempImages[tipo] = await comprimirDataUrl(e.target.result, maxAncho, calidad);
+            };
             reader.readAsDataURL(input.files[0]);
         }
     }
@@ -1770,17 +1802,18 @@
             return;
         }
 
-        getTienda().productos.unshift({
+        const nuevoProd = {
             nombre: nom,
             desc: desc,
             precio_usd: prec,
             cat: cat,
             agotado: false,
             img: tempImages.producto || ""
-        });
-        tempImages.producto = null;
+        };
+        getTienda().productos.unshift(nuevoProd);
 
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            tempImages.producto = null;
             visitasPendientesGuardar = false;
             document.getElementById("prod-nombre").value = "";
             document.getElementById("prod-desc").value = "";
@@ -1788,6 +1821,8 @@
             document.getElementById("prod-foto").value = "";
             mostrarNotificacion("✅ ¡Producto publicado en la nube!");
             renderizarListasAdmin();
+        } else {
+            getTienda().productos.shift();
         }
     }
 
@@ -1819,6 +1854,7 @@
             return;
         }
 
+        const copiaAnterior = { ...prod };
         const nombreAnterior = prod.nombre;
         prod.nombre = nom;
         prod.desc = desc;
@@ -1827,22 +1863,23 @@
         prod.agotado = estadoStock === "agotado";
         if (tempImages.editProducto) {
             prod.img = tempImages.editProducto;
-            tempImages.editProducto = null;
-        }
-
-        if (prod.agotado) {
-            delete carrito[nombreAnterior];
-            delete carrito[nom];
-        } else if (nombreAnterior !== nom && carrito[nombreAnterior]) {
-            carrito[nom] = (carrito[nom] || 0) + carrito[nombreAnterior];
-            delete carrito[nombreAnterior];
         }
 
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            tempImages.editProducto = null;
             visitasPendientesGuardar = false;
             editandoProductoIdx = null;
+            if (prod.agotado) {
+                delete carrito[nombreAnterior];
+                delete carrito[nom];
+            } else if (nombreAnterior !== nom && carrito[nombreAnterior]) {
+                carrito[nom] = (carrito[nom] || 0) + carrito[nombreAnterior];
+                delete carrito[nombreAnterior];
+            }
             mostrarNotificacion("✅ ¡Producto actualizado!");
             renderizarListasAdmin();
+        } else {
+            prods[idx] = copiaAnterior;
         }
     }
 
@@ -1867,21 +1904,27 @@
         prods[idx] = prods[targetIdx];
         prods[targetIdx] = temp;
 
-        if (editandoProductoIdx === idx) editandoProductoIdx = targetIdx;
-        else if (editandoProductoIdx === targetIdx) editandoProductoIdx = idx;
-
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            if (editandoProductoIdx === idx) editandoProductoIdx = targetIdx;
+            else if (editandoProductoIdx === targetIdx) editandoProductoIdx = idx;
             visitasPendientesGuardar = false;
             renderizarListasAdmin();
+        } else {
+            prods[targetIdx] = prods[idx];
+            prods[idx] = temp;
         }
     }
 
     async function eliminarProducto(idx) {
-        if (editandoProductoIdx === idx) editandoProductoIdx = null;
-        getTienda().productos.splice(idx, 1);
+        const prods = getTienda().productos;
+        const eliminado = prods[idx];
+        prods.splice(idx, 1);
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            if (editandoProductoIdx === idx) editandoProductoIdx = null;
             visitasPendientesGuardar = false;
             renderizarListasAdmin();
+        } else {
+            prods.splice(idx, 0, eliminado);
         }
     }
 
