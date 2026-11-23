@@ -162,6 +162,31 @@
             border-radius: 12px;
         }
 
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-top: 12px;
+        }
+
+        .stat-card {
+            padding: 18px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .stat-value {
+            font-size: 1.7rem;
+            font-weight: 800;
+            color: var(--blue-primary);
+        }
+
         .delivery-notice {
             padding: 12px 16px;
             margin-bottom: 14px;
@@ -321,6 +346,12 @@
             color: var(--blue-primary);
             padding: 8px 0;
             border-radius: 12px;
+        }
+
+        /* Sección de Reseñas */
+        #seccion-resenas {
+            margin-top: 28px;
+            scroll-margin-top: 76px;
         }
 
         /* Barra flotante inferior */
@@ -610,11 +641,11 @@
             <!-- Pestañas (Reseñas de primera + Categorías) -->
             <div class="tabs-container" id="tabs-categorias"></div>
 
-            <!-- Contenedor de Categorías y Productos -->
+            <!-- Contenedor de Categorías y Productos (Siempre visible) -->
             <div id="grid-productos"></div>
 
-            <!-- Sección de Reseñas -->
-            <div id="seccion-resenas" class="hidden">
+            <!-- Sección de Reseñas (Visible debajo de los productos sin ocultarlos) -->
+            <div id="seccion-resenas">
                 <div class="neu-box section-panel">
                     <h4 style="margin-bottom: 12px;">✍️ Dejar una calificación o reseña</h4>
                     <div class="form-group">
@@ -755,6 +786,7 @@
                 <button class="tab-btn" onclick="switchAdminTab('envios', this)">🛵 Envíos</button>
                 <button class="tab-btn" onclick="switchAdminTab('categorias', this)">📂 Categorías</button>
                 <button class="tab-btn" onclick="switchAdminTab('productos', this)">➕ Productos</button>
+                <button class="tab-btn" onclick="switchAdminTab('visitas', this)">👥 Visitas</button>
             </div>
 
             <!-- Tab 1: Configuración -->
@@ -841,6 +873,24 @@
                 <h4 style="margin: 24px 0 12px 0;">Productos Publicados</h4>
                 <div id="lista-productos-admin"></div>
             </div>
+
+            <!-- Tab 5: Visitas -->
+            <div id="adm-tab-visitas" class="neu-box section-panel hidden">
+                <h4>👥 Usuarios que entran en la página</h4>
+                <div class="stats-grid">
+                    <div class="neu-inset stat-card">
+                        <div class="stat-label">Visitas Totales</div>
+                        <div id="visitas-total-val" class="stat-value">0</div>
+                    </div>
+                    <div class="neu-inset stat-card">
+                        <div class="stat-label">Visitas Hoy</div>
+                        <div id="visitas-hoy-val" class="stat-value">0</div>
+                    </div>
+                </div>
+                <p style="font-size: 0.78rem; color: var(--text-muted); margin-top: 14px;">
+                    Se cuenta 1 visita única por navegador/sesión al cargar la tienda.
+                </p>
+            </div>
         </div>
     </div>
 </div>
@@ -861,6 +911,7 @@
     let tempImages = { logo: null, banner: null, producto: null, editProducto: null };
     let editandoProductoIdx = null;
     let editandoMunicipioNombre = null;
+    let visitasPendientesGuardar = false;
 
     function mostrarNotificacion(texto) {
         const toast = document.getElementById("toast");
@@ -915,6 +966,46 @@
         return tiendaActualKey ? db[tiendaActualKey] : null;
     }
 
+    // --- CONTEO DE VISITAS (SIN SATURAR ESCRITURAS) ---
+    function obtenerFechaHoyClave() {
+        const d = new Date();
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function registrarVisitaEnMemoria() {
+        const tienda = getTienda();
+        if (!tienda) return;
+        const hoy = obtenerFechaHoyClave();
+        const claveSesion = `visita_${tiendaActualKey}_${hoy}`;
+        if (sessionStorage.getItem(claveSesion)) return;
+
+        sessionStorage.setItem(claveSesion, "1");
+        const stats = tienda.visitas || { total: 0, fecha: hoy, hoy: 0 };
+        stats.total = (parseInt(stats.total, 10) || 0) + 1;
+        if (stats.fecha === hoy) {
+            stats.hoy = (parseInt(stats.hoy, 10) || 0) + 1;
+        } else {
+            stats.fecha = hoy;
+            stats.hoy = 1;
+        }
+        tienda.visitas = stats;
+        visitasPendientesGuardar = true;
+    }
+
+    function renderizarPanelVisitas() {
+        const tienda = getTienda();
+        const hoy = obtenerFechaHoyClave();
+        const stats = tienda?.visitas || { total: 0, fecha: hoy, hoy: 0 };
+        const total = parseInt(stats.total, 10) || 0;
+        const hoyCount = stats.fecha === hoy ? (parseInt(stats.hoy, 10) || 0) : 0;
+
+        document.getElementById("visitas-total-val").textContent = total;
+        document.getElementById("visitas-hoy-val").textContent = hoyCount;
+    }
+
     // --- FORMATEO DE MONEDAS ---
     function formatearPrecio(precioUsd) {
         const tienda = getTienda();
@@ -943,6 +1034,11 @@
         categoriaActiva = nombreCat;
         const tabsDiv = document.getElementById("tabs-categorias");
         const botones = tabsDiv.querySelectorAll(".tab-btn[data-cat]");
+        const btnResena = tabsDiv.querySelector(".tab-btn[data-resena]");
+
+        if (btnResena) {
+            btnResena.classList.toggle("active", viendoResenas);
+        }
 
         botones.forEach(btn => {
             const match = !viendoResenas && btn.getAttribute("data-cat") === nombreCat;
@@ -972,6 +1068,8 @@
         document.getElementById("vista-vacia").classList.add("hidden");
         document.getElementById("vista-admin").classList.add("hidden");
         document.getElementById("vista-tienda").classList.remove("hidden");
+
+        registrarVisitaEnMemoria();
 
         const tienda = getTienda();
         const cfg = tienda.config;
@@ -1021,7 +1119,7 @@
         const tabsDiv = document.getElementById("tabs-categorias");
         const resenaLabel = `⭐ Reseñas (${(tienda.resenas || []).length})`;
         const resenaActiveClass = viendoResenas ? "active" : "";
-        const resenaBtnHtml = `<button class="tab-btn ${resenaActiveClass}" onclick="abrirSeccionResenas()">${resenaLabel}</button>`;
+        const resenaBtnHtml = `<button class="tab-btn ${resenaActiveClass}" data-resena="true" onclick="abrirSeccionResenas()">${resenaLabel}</button>`;
 
         const catBtnsHtml = categorias.map(cat => {
             const activeClass = (!viendoResenas && categoriaActiva === cat) ? "active" : "";
@@ -1032,15 +1130,11 @@
 
         tabsDiv.innerHTML = `${resenaBtnHtml}${catBtnsHtml}`;
 
-        if (viendoResenas) {
-            document.getElementById("grid-productos").classList.add("hidden");
-            document.getElementById("seccion-resenas").classList.remove("hidden");
-            renderizarResenas();
-        } else {
-            document.getElementById("grid-productos").classList.remove("hidden");
-            document.getElementById("seccion-resenas").classList.add("hidden");
-            renderizarProductos();
-        }
+        // Mantener siempre visibles tanto los productos como la sección de reseñas
+        document.getElementById("grid-productos").classList.remove("hidden");
+        document.getElementById("seccion-resenas").classList.remove("hidden");
+        renderizarProductos();
+        renderizarResenas();
 
         actualizarCarritoUI();
     }
@@ -1063,8 +1157,6 @@
 
     function irACategoria(cat) {
         viendoResenas = false;
-        document.getElementById("grid-productos").classList.remove("hidden");
-        document.getElementById("seccion-resenas").classList.add("hidden");
         actualizarPestanaActivaUI(cat, true);
 
         const targetEl = document.querySelector(`.category-block[data-cat-section="${CSS.escape(cat)}"]`);
@@ -1079,7 +1171,16 @@
 
     function abrirSeccionResenas() {
         viendoResenas = true;
-        renderizarTienda();
+        actualizarPestanaActivaUI(categoriaActiva, false);
+
+        const resenasEl = document.getElementById("seccion-resenas");
+        if (resenasEl) {
+            bloqueandoScrollAuto = true;
+            const tabsHeight = document.getElementById("tabs-categorias").offsetHeight || 56;
+            const y = resenasEl.getBoundingClientRect().top + window.scrollY - tabsHeight - 14;
+            window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+            setTimeout(() => { bloqueandoScrollAuto = false; }, 650);
+        }
     }
 
     function cambiarMoneda() {
@@ -1174,12 +1275,24 @@
     }
 
     function sincronizarCategoriaConScroll() {
-        if (viendoResenas || bloqueandoScrollAuto) return;
+        if (bloqueandoScrollAuto) return;
         const secciones = document.querySelectorAll(".category-block[data-cat-section]");
         if (!secciones.length) return;
 
         const tabsEl = document.getElementById("tabs-categorias");
         const offsetUmbral = (tabsEl ? tabsEl.offsetHeight : 56) + 28;
+
+        const resenasEl = document.getElementById("seccion-resenas");
+        if (resenasEl) {
+            const rectRes = resenasEl.getBoundingClientRect();
+            if (rectRes.top <= offsetUmbral) {
+                if (!viendoResenas) {
+                    viendoResenas = true;
+                    actualizarPestanaActivaUI(categoriaActiva, false);
+                }
+                return;
+            }
+        }
 
         let actual = secciones[0].getAttribute("data-cat-section");
         for (const sec of secciones) {
@@ -1191,7 +1304,8 @@
             }
         }
 
-        if (actual && actual !== categoriaActiva) {
+        if (viendoResenas || (actual && actual !== categoriaActiva)) {
+            viendoResenas = false;
             actualizarPestanaActivaUI(actual, true);
         }
     }
@@ -1337,10 +1451,10 @@
         getTienda().resenas.unshift({ cliente: nom, estrellas: est, comentario: com });
         const ok = await guardarTiendaEnSupabase(tiendaActualKey);
         if (ok) {
+            visitasPendientesGuardar = false;
             document.getElementById("res-nombre").value = "";
             document.getElementById("res-comentario").value = "";
             mostrarNotificacion("✅ ¡Reseña publicada!");
-            renderizarResenas();
             renderizarTienda();
         }
     }
@@ -1364,7 +1478,11 @@
     }
 
     // --- ADMINISTRACIÓN (SOLO ACCESIBLE MEDIANTE ?admin=true) ---
-    function abrirAdmin() {
+    async function abrirAdmin() {
+        if (visitasPendientesGuardar && tiendaActualKey && db[tiendaActualKey]) {
+            const ok = await guardarTiendaEnSupabase(tiendaActualKey);
+            if (ok) visitasPendientesGuardar = false;
+        }
         document.getElementById("vista-tienda").classList.add("hidden");
         document.getElementById("vista-vacia").classList.add("hidden");
         document.getElementById("vista-admin").classList.remove("hidden");
@@ -1447,7 +1565,8 @@
                 monedas: { USD: { activa: true, tasa: 1 } }
             },
             productos: [],
-            resenas: []
+            resenas: [],
+            visitas: { total: 0, fecha: obtenerFechaHoyClave(), hoy: 0 }
         };
 
         const ok = await guardarTiendaEnSupabase(key);
@@ -1456,6 +1575,7 @@
             return;
         }
 
+        visitasPendientesGuardar = false;
         tiendaActualKey = key;
         categoriaActiva = null;
         document.getElementById("admin-auth").classList.add("hidden");
@@ -1475,11 +1595,14 @@
     }
 
     function switchAdminTab(tab, btn) {
-        ["config", "envios", "categorias", "productos"].forEach(t => {
+        ["config", "envios", "categorias", "productos", "visitas"].forEach(t => {
             document.getElementById(`adm-tab-${t}`).classList.toggle("hidden", t !== tab);
         });
         btn.parentElement.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
+        if (tab === "visitas") {
+            renderizarPanelVisitas();
+        }
     }
 
     function cargarDatosAdmin() {
@@ -1502,6 +1625,7 @@
 
         cancelarEliminacionTienda();
         renderizarListasAdmin();
+        renderizarPanelVisitas();
     }
 
     function procesarImagen(input, tipo) {
@@ -1532,6 +1656,7 @@
 
         const ok = await guardarTiendaEnSupabase(tiendaActualKey);
         if (ok) {
+            visitasPendientesGuardar = false;
             mostrarNotificacion("✅ ¡Configuración guardada en la nube!");
             cargarDatosAdmin();
         }
@@ -1546,6 +1671,7 @@
         }
         getTienda().config.municipios_envio[nom] = prec;
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             document.getElementById("muni-nombre").value = "";
             document.getElementById("muni-precio").value = "";
             mostrarNotificacion("✅ Municipio agregado.");
@@ -1581,6 +1707,7 @@
         }
         getTienda().config.municipios_envio = nuevoObj;
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             editandoMunicipioNombre = null;
             mostrarNotificacion("✅ Municipio actualizado.");
             renderizarListasAdmin();
@@ -1591,6 +1718,7 @@
         if (editandoMunicipioNombre === nom) editandoMunicipioNombre = null;
         delete getTienda().config.municipios_envio[nom];
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             renderizarListasAdmin();
         }
     }
@@ -1601,6 +1729,7 @@
         if (nom && !cats.includes(nom)) {
             cats.push(nom);
             if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+                visitasPendientesGuardar = false;
                 document.getElementById("cat-nombre").value = "";
                 mostrarNotificacion("✅ Categoría agregada.");
                 renderizarListasAdmin();
@@ -1616,6 +1745,7 @@
         cats[idx] = cats[nuevoIdx];
         cats[nuevoIdx] = temp;
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             renderizarListasAdmin();
         }
     }
@@ -1624,6 +1754,7 @@
         const c = getTienda().config;
         c.categorias = c.categorias.filter(x => x !== nom);
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             renderizarListasAdmin();
         }
     }
@@ -1650,6 +1781,7 @@
         tempImages.producto = null;
 
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             document.getElementById("prod-nombre").value = "";
             document.getElementById("prod-desc").value = "";
             document.getElementById("prod-precio").value = "";
@@ -1707,6 +1839,7 @@
         }
 
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             editandoProductoIdx = null;
             mostrarNotificacion("✅ ¡Producto actualizado!");
             renderizarListasAdmin();
@@ -1738,6 +1871,7 @@
         else if (editandoProductoIdx === targetIdx) editandoProductoIdx = idx;
 
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             renderizarListasAdmin();
         }
     }
@@ -1746,6 +1880,7 @@
         if (editandoProductoIdx === idx) editandoProductoIdx = null;
         getTienda().productos.splice(idx, 1);
         if (await guardarTiendaEnSupabase(tiendaActualKey)) {
+            visitasPendientesGuardar = false;
             renderizarListasAdmin();
         }
     }
@@ -1906,6 +2041,7 @@
             delete db[keyABorrar];
             tiendaActualKey = Object.keys(db)[0] || null;
             categoriaActiva = null;
+            visitasPendientesGuardar = false;
             cerrarSesionAdmin();
             volverATienda();
             mostrarNotificacion("🗑️ Tienda eliminada de la nube.");
@@ -1916,7 +2052,7 @@
     (async function iniciarApp() {
         await cargarDBDesdeSupabase();
         if (new URLSearchParams(window.location.search).get("admin") === "true") {
-            abrirAdmin();
+            await abrirAdmin();
         } else {
             renderizarTienda();
         }
