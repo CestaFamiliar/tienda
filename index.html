@@ -641,11 +641,11 @@
             <!-- Pestañas (Reseñas de primera + Categorías) -->
             <div class="tabs-container" id="tabs-categorias"></div>
 
-            <!-- Contenedor de Categorías y Productos (Siempre visible) -->
+            <!-- Contenedor de Categorías y Productos -->
             <div id="grid-productos"></div>
 
-            <!-- Sección de Reseñas (Visible debajo de los productos sin ocultarlos) -->
-            <div id="seccion-resenas">
+            <!-- Sección de Reseñas (Oculta por defecto; se abre al pulsar Reseñas) -->
+            <div id="seccion-resenas" class="hidden">
                 <div class="neu-box section-panel">
                     <h4 style="margin-bottom: 12px;">✍️ Dejar una calificación o reseña</h4>
                     <div class="form-group">
@@ -1139,14 +1139,18 @@
         tabsDiv.innerHTML = `${resenaBtnHtml}${catBtnsHtml}`;
 
         document.getElementById("grid-productos").classList.remove("hidden");
-        document.getElementById("seccion-resenas").classList.remove("hidden");
+        document.getElementById("seccion-resenas").classList.toggle("hidden", !viendoResenas);
         renderizarProductos();
-        renderizarResenas();
+        if (viendoResenas) {
+            renderizarResenas();
+        }
 
         actualizarCarritoUI();
     }
 
     function irAProductos() {
+        viendoResenas = false;
+        document.getElementById("seccion-resenas").classList.add("hidden");
         const tienda = getTienda();
         const categorias = tienda ? obtenerListaCategorias(tienda) : [];
         const primeraCat = categorias[0] || categoriaActiva;
@@ -1154,6 +1158,7 @@
             irACategoria(primeraCat);
             return;
         }
+        actualizarPestanaActivaUI(categoriaActiva, false);
         const gridEl = document.getElementById("grid-productos");
         if (gridEl) {
             const tabsHeight = document.getElementById("tabs-categorias").offsetHeight || 56;
@@ -1164,6 +1169,7 @@
 
     function irACategoria(cat) {
         viendoResenas = false;
+        document.getElementById("seccion-resenas").classList.add("hidden");
         actualizarPestanaActivaUI(cat, true);
 
         const targetEl = document.querySelector(`.category-block[data-cat-section="${CSS.escape(cat)}"]`);
@@ -1178,6 +1184,8 @@
 
     function abrirSeccionResenas() {
         viendoResenas = true;
+        document.getElementById("seccion-resenas").classList.remove("hidden");
+        renderizarResenas();
         actualizarPestanaActivaUI(categoriaActiva, false);
 
         const resenasEl = document.getElementById("seccion-resenas");
@@ -1280,24 +1288,12 @@
     }
 
     function sincronizarCategoriaConScroll() {
-        if (bloqueandoScrollAuto) return;
+        if (bloqueandoScrollAuto || viendoResenas) return;
         const secciones = document.querySelectorAll(".category-block[data-cat-section]");
         if (!secciones.length) return;
 
         const tabsEl = document.getElementById("tabs-categorias");
         const offsetUmbral = (tabsEl ? tabsEl.offsetHeight : 56) + 28;
-
-        const resenasEl = document.getElementById("seccion-resenas");
-        if (resenasEl) {
-            const rectRes = resenasEl.getBoundingClientRect();
-            if (rectRes.top <= offsetUmbral) {
-                if (!viendoResenas) {
-                    viendoResenas = true;
-                    actualizarPestanaActivaUI(categoriaActiva, false);
-                }
-                return;
-            }
-        }
 
         let actual = secciones[0].getAttribute("data-cat-section");
         for (const sec of secciones) {
@@ -1309,8 +1305,7 @@
             }
         }
 
-        if (viendoResenas || (actual && actual !== categoriaActiva)) {
-            viendoResenas = false;
+        if (actual && actual !== categoriaActiva) {
             actualizarPestanaActivaUI(actual, true);
         }
     }
